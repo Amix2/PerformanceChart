@@ -1,0 +1,446 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <style>
+        body {
+            margin: 0px;
+            padding: 0px;
+        }
+
+        #wrapper {
+            position: relative;
+            border: 1px solid #9C9898;
+
+        }
+
+        /* #buttonWrapper {
+            position: absolute;
+            width: 30px;
+            top: 2px;
+            right: 2px;
+        }
+
+        input[type="button"] {
+            padding: 5px;
+            width: 30px;
+            margin: 0px 0px 2px 0px;
+        } */
+    </style>
+    <script>
+
+        var translatePos = {
+            x: 0,
+            y: 0
+        };
+
+        var scale = 1.0;
+        var scaleMultiplier = 0.8;
+        var startDragOffset = {};
+        var mouseDown = false;
+        var canvas;
+
+        var dataValid = true;
+        var secToPx = 100000
+        var gridLineWidth = 100;
+        var gridTextSize = 40000;
+        var fontStyle = "Calibri"
+        var itemHeight = secToPx / 10
+        var textMargin = secToPx / 1000;
+        var data = {
+            totalLength: 3.5, // [s]
+            items: [
+                {
+                    name: "obj0",
+                    prefix: "",
+                    postfix: "_1",
+                    start: 1.2,
+                    end: 2.4,
+                    layer: 0,
+                    color: "#ffff00",
+                    maxFontSize: 10000
+                },
+                {
+                    name: "obj1",
+                    prefix: "",
+                    postfix: "_2",
+                    start: 1.9,
+                    end: 2.2,
+                    layer: 1,
+                    color: "#00ff00",
+                    maxFontSize: 10000
+                }
+            ]
+        }
+
+        function getPageWidth() {
+            return Math.max(
+                document.body.scrollWidth,
+                document.documentElement.scrollWidth,
+                document.body.offsetWidth,
+                document.documentElement.offsetWidth,
+                document.documentElement.clientWidth
+            );
+        }
+
+        function getPageHeight() {
+            return Math.max(
+                document.body.scrollHeight,
+                document.documentElement.scrollHeight,
+                document.body.offsetHeight,
+                document.documentElement.offsetHeight,
+                document.documentElement.clientHeight
+            );
+        }
+
+        function drawTextInBox(ctx, txt, font, x, y, w, h, angle = 0) {
+            angle = angle || 0;
+            var fontHeight = 20;
+            var hMargin = 4;
+            ctx.font = fontHeight + 'px ' + font;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            var txtWidth = ctx.measureText(txt).width + 2 * hMargin;
+            ctx.save();
+            ctx.translate(x + w / 2, y);
+            ctx.rotate(angle);
+            ctx.strokeRect(-w / 2, 0, w, h);
+            ctx.scale(w / txtWidth, h / fontHeight);
+            ctx.translate(hMargin, 0)
+            ctx.fillText(txt, -txtWidth / 2, 0);
+            ctx.restore();
+        }
+
+        function drawTextInBoxProportional(ctx, txt, maxSize, font, x, y, w, h, margin, textBaseline) {
+            ctx.beginPath();
+            ctx.fillStyle = "#000000";
+            ctx.textAlign = 'left';
+            ctx.textBaseline = textBaseline;
+            var txtWidth = ctx.measureText(txt).width + 2 * margin;
+            // lower the font size until the text fits the canvas
+            let minFontSize = 10;
+            let maxFontSize = maxSize*100;
+            let currentFontSize = (minFontSize + maxFontSize) / 2;
+            //while(maxFontSize - minFontSize > 3)
+            {
+                ctx.font = currentFontSize + 'px ' + font;
+                let tooBig = ctx.measureText(txt).width + 2 * margin > w;
+                if(tooBig)
+                    maxFontSize = currentFontSize;
+                else 
+                    minFontSize = currentFontSize;
+                currentFontSize = (minFontSize + maxFontSize) / 2;
+            }
+            ctx.font = currentFontSize + 'px ' + font;
+            if (  currentFontSize - 100 > 5) {
+                ctx.fillText(txt, x + margin, y + margin);
+            }
+            else {
+                let f = 0.01;
+                ctx.fillText(txt, x + margin, y + margin);
+
+                //ctx.fillText(txt, x + margin*f, y + margin*f);
+            }
+            return currentFontSize;
+        }
+
+        function drawTextAtCentered(ctx, txt, size, font, x, y) {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            var txtWidth = ctx.measureText(txt).width;
+            ctx.font = size + 'px ' + font;
+            ctx.fillText(txt, x, y);
+        }
+
+        function getMousePos(canvas, clientX, clientY) {
+            let bound = canvas.getBoundingClientRect();
+            return {
+                x: clientX - bound.left - canvas.clientLeft,
+                y: clientY - bound.top - canvas.clientTop
+            };
+
+        }
+
+        function drawGrid(ctx, data) {
+            let len = Math.ceil(data.totalLength);
+            ctx.fillStyle = "#000000";
+            ctx.beginPath();
+            ctx.lineWidth = gridLineWidth;
+            ctx.moveTo(0, 0);
+            ctx.lineTo(len * secToPx, 0);
+            ctx.strokeStyle = "#000000";
+
+            ctx.stroke();
+            for (let i = 0; i <= len; i++) {
+                ctx.beginPath();
+                ctx.lineWidth = gridLineWidth * 0.7;
+                ctx.moveTo(i * secToPx, 0);
+                ctx.lineTo(i * secToPx, 10 * secToPx);
+                ctx.stroke();
+                drawTextAtCentered(ctx, i, gridTextSize, fontStyle, i * secToPx, 0)
+            }
+        }
+
+        function drawItem(ctx, item) {
+            ctx.beginPath();
+            ctx.fillStyle = typeof item.color !== 'undefined' ? item.color : "#00000f";
+            let sx = item.start * secToPx;
+            let sy = item.layer * itemHeight;
+            let w = (item.end - item.start) * secToPx;
+            let h = itemHeight;
+            ctx.rect(sx, sy, w, h);
+            ctx.fill();
+            ctx.strokeStyle = "#303030";
+            ctx.lineWidth = 10;
+            ctx.stroke();
+            let name = item.prefix + item.name + item.postfix;
+            let time = ((item.end - item.start) * 1000).toFixed(2) + " ms";
+            let fontSize1 = drawTextInBoxProportional(ctx, name, itemHeight / 200, fontStyle, sx, sy, w, h, textMargin, "top");
+            let magicHeight = 1;
+            let fontSize2 = drawTextInBoxProportional(ctx, time, itemHeight / 200, fontStyle, sx, sy + fontSize1 * magicHeight, w, h, textMargin, "top");
+            //item.maxFontSize = Math.min(item.maxFontSize, Math.max(fontSize1, fontSize2));
+        }
+
+        function drawData(ctx, data) {
+            drawGrid(ctx, data);
+            for (const item of data.items) {
+                drawItem(ctx, item);
+            }
+        }
+
+        function draw(scale, translatePos) {
+            var canvas = document.getElementById("myCanvas");
+            var context = canvas.getContext("2d");
+
+            // clear canvas
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            context.save();
+            context.translate(translatePos.x, translatePos.y);
+            context.scale(scale, scale);
+
+            drawData(context, data);
+            context.restore();
+        }
+
+        function mouseDocPos(posScreen) {
+            return {
+                x: ((posScreen.x - translatePos.x) / scale),
+                y: ((posScreen.y - translatePos.y) / scale)
+            };
+        }
+
+        function scaleBy(factor, clientX, clientY) {
+            let posScreen = getMousePos(canvas, clientX, clientY);
+            let posBefore = mouseDocPos(posScreen);
+
+            scale *= factor;
+            translatePos.x = posScreen.x - posBefore.x * scale
+            translatePos.y = posScreen.y - posBefore.y * scale
+        }
+
+        function resetCamera() {
+            scale = 1.0
+            startDragOffset = {};
+            mouseDown = false;
+            if (dataValid) {
+                let totalPxLen = data.totalLength * secToPx
+                scaleBy(canvas.width / totalPxLen, 0, 0)
+                translatePos.x = 0.5
+                translatePos.y = secToPx / 1000
+            }
+        }
+
+        function handleMainGraph(canvas) {
+            canvas.width = getPageWidth()
+            scaleMultiplier = 0.8;
+            resetCamera()
+
+
+            // add event listeners to handle screen drag
+            canvas.addEventListener("mousedown", function (evt) {
+                mouseDown = true;
+                startDragOffset.x = evt.clientX - translatePos.x;
+                startDragOffset.y = evt.clientY - translatePos.y;
+            });
+
+            canvas.addEventListener("mouseup", function (evt) {
+                mouseDown = false;
+            });
+
+            canvas.addEventListener("mouseover", function (evt) {
+                mouseDown = false;
+            });
+
+            canvas.addEventListener("mouseout", function (evt) {
+                mouseDown = false;
+            });
+
+            canvas.addEventListener("mousemove", function (evt) {
+                if (mouseDown) {
+                    translatePos.x = evt.clientX - startDragOffset.x;
+                    translatePos.y = evt.clientY - startDragOffset.y;
+                    draw(scale, translatePos);
+                }
+                let pos = mouseDocPos(getMousePos(canvas, evt.clientX, evt.clientY));
+
+                document.getElementById("status").innerHTML = (pos.x).toFixed(2) + ", " + (pos.y).toFixed(2);
+            });
+
+            canvas.addEventListener("wheel", function (evt) {
+                if (evt.deltaY > 0)
+                    scaleBy(scaleMultiplier, evt.clientX, evt.clientY);
+                else
+                    scaleBy(1 / scaleMultiplier, evt.clientX, evt.clientY);
+                draw(scale, translatePos);
+            });
+
+            canvas.addEventListener('dblclick', function () {
+                resetCamera();
+                draw(scale, translatePos);
+            });
+
+            draw(scale, translatePos);
+        }
+
+        function OnImportJsonDialog() {
+            let input = document.createElement('input');
+            input.type = 'file';
+            input.accept = ".json"
+            input.onchange = _this => {
+                let files = Array.from(input.files);
+                if (files.length == 1) {
+                    let file = files[0]
+
+                    // setting up the reader
+                    var reader = new FileReader();
+                    reader.readAsText(file, 'UTF-8');
+
+                    // here we tell the reader what to do when it's done reading...
+                    reader.onload = readerEvent => {
+                        var content = readerEvent.target.result; // this is the content!
+                        var json = JSON.parse(content);
+                        OnLoadData(json);
+                    }
+
+                }
+            };
+            input.click();
+        }
+
+        function OnLoadData(dataJson) {
+
+
+            data = dataJson;
+            if (typeof data.items === 'undefined') {
+                data.items = []
+            }
+
+            function generateHslaColors(saturation, lightness, alpha, amount) {
+                const HSLToRGB = (h, s, l) => {
+                    s /= 100;
+                    l /= 100;
+                    const k = n => (n + h / 30) % 12;
+                    const a = s * Math.min(l, 1 - l);
+                    const f = n =>
+                        l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+                    return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+                };
+                function RGBToHex(r, g, b) {
+                    r = r.toString(16);
+                    g = g.toString(16);
+                    b = b.toString(16);
+
+                    if (r.length == 1)
+                        r = "0" + r;
+                    if (g.length == 1)
+                        g = "0" + g;
+                    if (b.length == 1)
+                        b = "0" + b;
+
+                    return "#" + r + g + b;
+                }
+
+                let colors = []
+                let huedelta = Math.trunc(360 / amount)
+                let iVal = 14549;
+                for (let i = 0; i < amount; i++) {
+                    iVal = iVal % amount;
+                    let hue = iVal * huedelta
+                    let color = HSLToRGB(hue, 100, 50)
+                    let colorStr = RGBToHex(color[0], color[1], color[2]);
+                    colors.push(colorStr)
+                    iVal += 14549;
+                }
+
+                return colors
+            }
+            const nameColors = new Map();
+            for (let i = 0; i < data.items.length; i++) {
+                if (typeof data.items[i].name === 'undefined')
+                    data.items[i].name = ""
+                if (typeof data.items[i].color === 'undefined')
+                    data.items[i].color = 0
+                if (!nameColors.has(data.items[i].name))
+                    nameColors.set(data.items[i].name, data.items[i].color)
+            }
+
+            let colors = generateHslaColors(100, 100, 100, nameColors.size)
+            {
+                let i = 0;
+                nameColors.forEach((value, key) => {
+                    if (value == 0)
+                        nameColors.set(key, colors[i])
+                    i++
+                })
+            }
+
+            for (let i = 0; i < data.items.length; i++) {
+                if (typeof data.items[i].prefix === 'undefined')
+                    data.items[i].prefix = ""
+                if (typeof data.items[i].postfix === 'undefined')
+                    data.items[i].postfix = ""
+                if (typeof data.items[i].layer === 'undefined')
+                    data.items[i].layer = 0
+                if (typeof data.items[i].color === 'undefined' || typeof data.items[i].color !== "string" || !data.items[i].color.startsWith("#") || data.items[i].color.length != 7)
+                    data.items[i].color = nameColors.get(data.items[i].name);
+                data.items[i].maxFontSize = itemHeight / 2.5;
+            }
+
+            if (typeof data.totalLength === 'undefined') {
+                data.totalLength = 0;
+                for (let i = 0; i < data.items.length; i++) {
+                    data.totalLength = Math.max(data.totalLength, parseFloat(data.items[i].end));
+                }
+            }
+
+            console.log(data);
+            dataValid = true;
+            resetCamera();
+            draw(scale, translatePos);
+        }
+
+        window.onload = function () {
+            canvas = document.getElementById("myCanvas");
+            handleMainGraph(canvas)
+        };
+
+        // jQuery(document).ready(function () {
+        //     $("#wrapper").mouseover(function (e) {
+        //         $('#status').html(e.pageX + ', ' + e.pageY);
+        //     });
+        // })
+
+    </script>
+</head>
+
+<body onmousedown="return false;">
+    <button onclick="OnImportJsonDialog()">Import</button>
+    <div id="wrapper">
+        <canvas id="myCanvas" width="1000" height="500">
+        </canvas>
+    </div>
+    <h2 id="status">
+        0, 0
+    </h2>
+</body>
