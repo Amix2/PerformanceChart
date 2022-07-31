@@ -114,8 +114,6 @@
     #importButton {
       margin-right: 10px;
       margin-left: 10px;
-      margin-top: 10px;
-      margin-bottom: 10px;
     }
 
     /* The switch - the box around the slider */
@@ -193,8 +191,9 @@
 
 <body>
   <button id="importButton" onclick="OnImportJsonDialog()">Import</button>
-  <div id="graphDiv"></div>
+  <div id="graphDiv" style="height:70%"></div>
   <div id="data">
+
     <div id="ModeSlider" class='parent'>
       <div class='child inline-block-child'>
         Kwadraty czasu
@@ -208,24 +207,37 @@
       <div class='child inline-block-child'>
         Suma krocząca
       </div>
-
     </div>
 
     <div id="limit-slider">
     </div>
 
+    <form class='parent' style='margin-top:20px'> 
+      <label class='child inline-block-child' for="fname">Czas od:</label>
+      <input class='child inline-block-child' type="text" id="LimitMinText" onchange="OnLimitTextChange();">
+      <label class='child inline-block-child' for="lname">do:</label>
+      <input class='child inline-block-child' type="text" id="LimitMaxText" onchange="OnLimitTextChange();">
+    </form>
+
+    <label class='child inline-block-child' for="fname">Długość sumy kroczącej:</label>
+    <input class='child inline-block-child' type="text" id="MarchingSumLen" onchange="OnMarchingSumLenChange();">
   </div>
 
 
   <script>
     var JsonDataGL = 0;
+    var JsonFileNameGL = 0;
     var GroupedDataGl = new Map();
     var LimitSliderGl = 0;
     var LimitMin = 0;
     var LimitMax = 100000000000;
+    var DataTimeMin = 0;
+    var DataTimeMax = 100000000000;
     var ShowSquares = true;
     var MatchingSumLen = 5;
     var MatchingSumFreq = 0.1;
+
+ 
 
 
     function OnImportJsonDialog() {
@@ -236,7 +248,7 @@
         let files = Array.from(input.files);
         if (files.length == 1) {
           let file = files[0]
-
+          JsonFileNameGL = file.name;
           // setting up the reader
           var reader = new FileReader();
           reader.readAsText(file, 'UTF-8');
@@ -260,6 +272,7 @@
     }
 
     function GroupData() {
+      GroupedDataGl = new Map();
 
       var startTime = 10000000;
       var endTime = 0;
@@ -303,14 +316,34 @@
         startTime = Math.min(startTime, item.start);
         endTime = Math.max(endTime, item.end);
       }
+      
+      LimitMin = startTime;
+      LimitMax = endTime;
+      DataTimeMin = startTime;
+      DataTimeMax = endTime;
 
+      MakeMarchingSum();
+
+      GroupedDataGl = new Map([...GroupedDataGl.entries()].sort());
+
+
+      ResetSlider();
+
+      PlotSinglePoints();
+    }
+
+    function MakeMarchingSum()
+    {
       function makeMarchingSum(value, key, map) {
         var lowID = 0;
         var highID = 0;
         let dataTimes = value.sXSolo;
         let dataValues = value.sYSolo;
-        for (let t = startTime + MatchingSumFreq; t < endTime; t += MatchingSumFreq) {
-          while (dataTimes[lowID] < t - MatchingSumFreq) lowID++;
+        value.sXMarchingSum = [];
+        value.sYMarchingSum = [];
+        value.descMarching = [];
+        for (let t = DataTimeMin + MatchingSumFreq; t < DataTimeMax; t += MatchingSumFreq) {
+          while (dataTimes[lowID] < t - MatchingSumLen) lowID++;
           while (dataTimes[highID] < t) highID++;
           var timeSum = 0;
           for (let i = lowID; i < highID; i++)
@@ -322,16 +355,6 @@
         }
       }
       GroupedDataGl.forEach(makeMarchingSum);
-
-
-      GroupedDataGl = new Map([...GroupedDataGl.entries()].sort());
-
-      LimitMin = startTime;
-      LimitMax = endTime;
-
-      ResetSlider();
-
-      PlotSinglePoints();
     }
 
     function PlotSinglePoints() {
@@ -373,7 +396,7 @@
       GroupedDataGl.forEach(logMapElements);
 
       var layout = {
-        title: 'Czasy wykonania operacji',
+        title: JsonFileNameGL,
         uirevision: 'true',
         xaxis: { autorange: true, title: { text: "Czas działania programu [s]" } },
         yaxis: { autorange: true, title: { text: "Czas wykonania [ms]" } },
@@ -414,7 +437,7 @@
       GroupedDataGl.forEach(logMapElements);
 
       var layout = {
-        title: 'Czasy wykonania operacji',
+        title: JsonFileNameGL,
         uirevision: 'true',
         xaxis: { autorange: true, title: { text: "Czas działania programu [s]" } },
         yaxis: { autorange: true, title: { text: "Czas wykonania [ms]" } },
@@ -425,11 +448,13 @@
     }
 
     function ResetSlider() {
+      document.getElementById("LimitMinText").value = LimitMin;
+      document.getElementById("LimitMaxText").value = LimitMax;
       LimitSliderGl = rangeSlider(document.querySelector('#limit-slider'), {
         // min value
-        min: LimitMin,
+        min: DataTimeMin,
         // max value
-        max: LimitMax,
+        max: DataTimeMax,
 
         // step size
         step: 0.1,
@@ -450,9 +475,26 @@
       })
     }
 
+    function OnLimitTextChange(){
+      let min = document.getElementById("LimitMinText").value;
+      let max = document.getElementById("LimitMaxText").value;
+      LimitMin = min;
+      LimitMax = max;
+      ResetSlider();
+      PlotSinglePoints();
+    }
+
+    function OnMarchingSumLenChange(){
+      MatchingSumLen = parseFloat(document.getElementById("MarchingSumLen").value);
+      MakeMarchingSum();
+      PlotSinglePoints();
+    }
+
     function OnSliderLimitChange(min, max) {
       LimitMin = min;
       LimitMax = max;
+      document.getElementById("LimitMinText").value = LimitMin;
+      document.getElementById("LimitMaxText").value = LimitMax;
       PlotSinglePoints();
     }
 
@@ -504,14 +546,13 @@
       },
     })
 
-
+    document.getElementById("MarchingSumLen").value = MatchingSumLen;
     var checkbox = document.querySelector('input[type="checkbox"]');
 
     checkbox.addEventListener('change', function () {
       ShowSquares = !checkbox.checked;
       PlotSinglePoints();
     });
-    //var myPlot = document.getElementById('graphDiv');
   </script>
 
 
